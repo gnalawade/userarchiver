@@ -98,7 +98,7 @@ if ($verbose) {
 # $days + 1 because LDAP filters only allow '<='.
 $epoch_date = round((time() / $seconds_in_day)) - ($days + 1);
 if ($verbose) {
-	print "Cut off days, date: $epoch_date, " . localtime($epoch_date * $seconds_in_day) . "\n";
+	print "Cut off days, date: $epoch_date (" . localtime($epoch_date * $seconds_in_day) . ")\n";
 }
 
 # Finding the LDAP server and base DN.
@@ -217,14 +217,19 @@ foreach my $entry ($ldap_mesg->entries) {
 # Closing the LDAP connection because we have a list of accounts.
 $ldap_mesg = $ldap_obj->unbind;
 
-if (!$yes) {
+if (!$yes && !$noop) {
 	print "Archive accounts? [Y/N]: ";
 	chomp(my $input = <STDIN>);
 	if ($input =~ /^[Y|y|yes]$/) {
 		print "Continuing...\n";
 	} else {
+		print "Exiting...\n";
 		exit(0)
 	}
+} elsif ($yes && !$noop) {
+	print "Yes specified. Skipping confirmation, and continuing with work...\n";
+} elsif ($noop) {
+	print "Noop in affect. Exiting without doing any work...\n";
 }
 
 # Do stuff.
