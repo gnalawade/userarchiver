@@ -34,7 +34,9 @@ use Term::ReadPassword::Win32 qw(read_password);
 use Net::LDAP;
 use Math::Round;
 
-use Data::Dumper qw(Dumper);
+# Variables to hold arguments
+my $dir_dest = '';
+my @accounts;
 
 # Variables to hold options.
 my $help = '';
@@ -43,6 +45,7 @@ my $verbose = 1;
 my $yes = '';
 my $days = 90;
 my $noop = '';
+my $dir_src = '/home';
 my $base_dn = '';
 my $bind_account = '';
 my $bind_ask_pass = '';
@@ -51,7 +54,6 @@ my @ldap_servers;
 my @exclusions;
 
 # Variables to hold data internal to the script.
-my @accounts;
 my $epoch_date;
 my $ldap_obj;
 my $ldap_filter = '';
@@ -69,6 +71,7 @@ GetOptions (
 	'noop|dry-run' => \$noop,
 	'help' => \$help,
 	'man' => \$man,
+	'source-dir=s' => \$dir_src,
 	'server=s' => \@ldap_servers,
 	'base-dn=s' => \$base_dn,
 	'bind-account=s' => \$bind_account,
@@ -81,6 +84,14 @@ GetOptions (
 pod2usage(-exitval => 0, -verbose => 0) if $help;
 pod2usage(-exitval => 0, -verbose => 2) if $man;
 
+# Setting the destination directory.
+if (@ARGV != 0) {
+	$dir_dest = shift @ARGV;
+} else {
+	print "ERROR: A destination needs to be provided, at a minimum.\n";
+	pod2usage(-exitval => 0, -verbose => 0);
+}
+
 if ($verbose) {
 	print "Runtime options...\n";
 	print "- verbose: $verbose\n";
@@ -91,11 +102,14 @@ if ($verbose) {
 	print "- base_dn: $base_dn\n";
 	print "- bind user: $bind_account\n";
 	print "- bind pass: $bind_pass\n";
-	print "- ARGV accounts: " . join(", ", @ARGV) . "\n";
+	print "- source dir: $dir_src\n";
+	print "- destination dir: $dir_dest\n";
+	print "- cli arguments: " . join(", ", @ARGV) . "\n";
 }
 
 # Get the Epoch date in days.
 # $days + 1 because LDAP filters only allow '<='.
+# TODO: Rename $epoch_date to $date_account_cutoff
 $epoch_date = round((time() / $seconds_in_day)) - ($days + 1);
 if ($verbose) {
 	print "Cut off days, date: $epoch_date (" . localtime($epoch_date * $seconds_in_day) . ")\n";
@@ -229,8 +243,12 @@ if (!$yes && !$noop) {
 } elsif ($yes && !$noop) {
 	print "Yes specified. Skipping confirmation, and continuing with work...\n";
 } elsif ($noop) {
-	print "Noop in affect. Exiting without doing any work...\n";
+	print "No op in affect. Exiting without doing any work...\n";
 }
+
+# Create backup directory for today.
+# Check if account dir exists.
+# Tar directory
 
 # Do stuff.
 
@@ -255,18 +273,19 @@ userarchiver -	Finds and archives inactive user accounts.
 	--verbose			More feedback from the program.
 	--yes				Yes, do whatever without user confirmation.
 	--days N			Number of days the account should be inactive.
-	--noop | --dry-run		No op, don't do anything just list the actions.
+	--noop | --dry-run		No op, don't do anything just list the accounts available for archiving.
+	--source-dir /path/dir		Location of the user account directories.
 	--server ldap(s)://<server>:<port>	LDAP server to query, specify multiple times for multiple servers.
-	--base-dn			Base Distinguished Name to query on the LDAP server.
+	--base-dn			Base DN for the query on the LDAP server.
 	--bind-account		Acount used to bind to the LDAP server.
 	--bind-pw-ask		Ask for the bind account password.
 	--bind-pw			Password for the bind account. Overrides asking for password.
-	--exclude <account>		Do not process specified accounts.
-	--config /conf/file		Location of the config file. (Not operational)
+	--exclude accountname		Do not process specified accounts.
+	--config /path/file		Location of the config file. (Not operational)
 	--encrypt			Enable encryption of the archive. (Not operational)
 	--compress			Enable compression of the archive. (Not operational)
 	--compress-method <method>	Select compression method. (Not operational)
-	--server-file /ldap/file	Location of an ldap.conf file. (Not operational)
+	--server-file /path/file	Location of an ldap.conf file. (Not operational)
 
 =head1 ARGUMENTS
 
@@ -301,7 +320,7 @@ Print what the script is doing.
 Torpedos away! The scripts executes without asking for confirmation from the 
 user.
 
-=item B<--days> N
+=item B<--days N>
 
 The number of days an account needs to be inactive before action is taken. The
 default number of days is 90.
@@ -309,9 +328,15 @@ default number of days is 90.
 =item B<--noop>
 
 No op, or dry run. The script doesn't do anything when this option enabled, it 
-just reports what it would do.
+just reports which accounts it would archive.
 
-=item B<--server> ldap(s)://<server>:<port>
+=item B<--source-dir /path/dir>
+
+Sets the location of the user account directories.
+
+The default is "/home".
+
+=item B<--server ldap(s)://server:port>
 
 Specify the ldap server to query. Multiple LDAP servers can be specified by 
 adding a second instance, but this is only for redundancy purposes. The script
