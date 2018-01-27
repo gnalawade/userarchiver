@@ -36,6 +36,7 @@ use Math::Round;
 use Archive::Tar;
 use POSIX qw(strftime);
 use File::Find;
+use File::Path qw(remove_tree);
 
 use vars qw(*findname);
 *findname = *File::Find::name;
@@ -56,6 +57,7 @@ my $base_dn = '';
 my $bind_account = '';
 my $bind_ask_pass = '';
 my $bind_pass = '';
+my $no_del = '';
 my @ldap_servers;
 my @exclusions;
 
@@ -87,6 +89,16 @@ sub clean_string {
 	return $cleaned_string;
 }
 
+sub build_archive {
+	my ($src_name, $archive_dest, @filelist) = @_;
+	my $archive_name = $archive_dest . "/" . $src_name . ".tar.gz";
+	my $archive = Archive::Tar->new;
+
+	$archive->add_files(@filelist);
+	unless ($archive->write($archive_name, 9)) {
+		die "Unable to create $archive_name.\n";
+	}
+}
 # ------- Subroutines End ---------
 
 GetOptions (
@@ -101,6 +113,7 @@ GetOptions (
 	'base-dn=s' => \$base_dn,
 	'bind-account=s' => \$bind_account,
 	'bind-ask-pass' => \$bind_ask_pass,
+	'no-del' => \$no_del,
 	'bind-pw=s' => \$bind_pass,
 	'exclude=s' => \@exclusions,
 )
@@ -112,9 +125,15 @@ pod2usage(-exitval => 0, -verbose => 2) if $man;
 # Setting the destination directory.
 if (@ARGV != 0) {
 	$dir_dest = shift @ARGV;
+	# Cleaning file paths to make sure there aren't a trainling '/'.
+	$dir_dest = clean_string($dir_dest);
 } else {
 	print "ERROR: A destination needs to be provided, at a minimum.\n";
 	pod2usage(-exitval => 0, -verbose => 0);
+}
+
+if ($dir_src ne '/home') { 
+	$dir_src = clean_string($dir_src);
 }
 
 if ($verbose) {
@@ -131,13 +150,6 @@ if ($verbose) {
 	print "- destination dir: $dir_dest\n";
 	print "- excluding: " . join(", ", @exclusions) . "\n";
 	print "- cli arguments: " . join(", ", @ARGV) . "\n";
-}
-
-# Cleaning file paths to make sure there aren't a trainling '/'.
-$dir_dest = clean_string($dir_dest);
-
-if ($dir_src ne '/home') { 
-	$dir_src = clean_string($dir_src);
 }
 
 # Moving into the directory with the account directories.
@@ -292,7 +304,7 @@ unless (mkdir "$dir_dest/$date_dest") {
 }
 
 if ($verbose) {
-	print("Archiving account(s): $_\n");
+	print("Archiving account(s):\n");
 }
 
 foreach (@accounts) {
@@ -300,9 +312,21 @@ foreach (@accounts) {
 		print("- $_\n");
 	}
 	# Check if account dir exists.
-	# Tar directory
-	# Delete source directory
-	# Do stuff.
+	if (-d $_){
+		# Tar directory
+		File::Find::find (sub {push @files, $findname}, $_);
+		if (@files) {
+			build_archive($_, "$dir_dest/$date_dest", @files);
+			# TODO: Encrypt tarball
+			@files = ();
+			unless ($no_del) {
+				print("Removing $dir_dest/$_\n");
+				remove_tree($_, {safe => 1});
+			}
+		}
+	} else {
+		print("Skipping directory $dir_dest/$_, path does not exist.\n");
+	}
 }
 
 __END__
@@ -334,6 +358,7 @@ userarchiver -	Finds and archives inactive user accounts.
 	--bind-pw-ask		Ask for the bind account password.
 	--bind-pw			Password for the bind account. Overrides asking for password.
 	--exclude accountname		Do not process specified accounts.
+	--no-del			Do not delete the account directory.
 	--config /path/file		Location of the config file. (Not operational)
 	--encrypt			Enable encryption of the archive. (Not operational)
 	--compress			Enable compression of the archive. (Not operational)
