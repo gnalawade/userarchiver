@@ -33,6 +33,12 @@ use Pod::Usage;
 use Term::ReadPassword::Win32 qw(read_password);
 use Net::LDAP;
 use Math::Round;
+use Archive::Tar;
+use POSIX qw(strftime);
+use File::Find;
+
+use vars qw(*findname);
+*findname = *File::Find::name;
 
 # Variables to hold arguments
 my $dir_dest = '';
@@ -55,6 +61,7 @@ my @exclusions;
 
 # Variables to hold data internal to the script.
 my $epoch_date;
+my $date_dest;
 my $ldap_obj;
 my $ldap_filter = '';
 my $ldap_attrs = [
@@ -63,6 +70,24 @@ my $ldap_attrs = [
 	'shadowLastChange',
 ];
 my $seconds_in_day = 86400;
+my $src_name = '';
+my $src_path = '';
+my @files = ();
+
+# ------- Subroutines Start -------
+
+# Trimming the last '/' from the path, not that it matters.
+sub clean_string {
+	my $cleaned_string = shift @_;
+
+	if ($cleaned_string =~ /\/\z/ && $cleaned_string !~ /\A\/\z/) {
+		chop $cleaned_string;
+	}
+
+	return $cleaned_string;
+}
+
+# ------- Subroutines End ---------
 
 GetOptions (
 	'verbose!' => \$verbose,
@@ -104,13 +129,27 @@ if ($verbose) {
 	print "- bind pass: $bind_pass\n";
 	print "- source dir: $dir_src\n";
 	print "- destination dir: $dir_dest\n";
+	print "- excluding: " . join(", ", @exclusions) . "\n";
 	print "- cli arguments: " . join(", ", @ARGV) . "\n";
+}
+
+# Cleaning file paths to make sure there aren't a trainling '/'.
+$dir_dest = clean_string($dir_dest);
+
+if ($dir_src ne '/home') { 
+	$dir_src = clean_string($dir_src);
+}
+
+# Moving into the directory with the account directories.
+unless (chdir $dir_src) {
+	die "Can't change to $dir_src, $!\n";
 }
 
 # Get the Epoch date in days.
 # $days + 1 because LDAP filters only allow '<='.
 # TODO: Rename $epoch_date to $date_account_cutoff
-$epoch_date = round((time() / $seconds_in_day)) - ($days + 1);
+$epoch_date = round((time() / $seconds_in_day)) - ($days + 1); # Accounts older then this date will be archived.
+$date_dest = strftime "%Y%m%d%H%M%S", localtime; # Current date and time for destination dir.
 if ($verbose) {
 	print "Cut off days, date: $epoch_date (" . localtime($epoch_date * $seconds_in_day) . ")\n";
 }
@@ -120,7 +159,7 @@ if (@ldap_servers == 0) {
 	if ($verbose) {
 		print "Using /etc/openldap/ldap.conf to find ldap server(s).\n";
 	}
-	#TODO: Make this more flexible, and don't rely on a fixed location.
+	#TODO: Make this more flexible by not relyin on a fixed location.
 	open(LDAPCONF, "/etc/openldap/ldap.conf") 
 		or die "ERROR: /etc/openldap.ldap.conf not found.";
 	while (<LDAPCONF>) {
@@ -247,10 +286,24 @@ if (!$yes && !$noop) {
 }
 
 # Create backup directory for today.
-# Check if account dir exists.
-# Tar directory
+# TODO: Figure out how to check if $dir_dest is valid.
+unless (mkdir "$dir_dest/$date_dest") {
+	die "Unable to create $dir_dest/$date_dest\n";
+}
 
-# Do stuff.
+if ($verbose) {
+	print("Archiving account(s): $_\n");
+}
+
+foreach (@accounts) {
+	if ($verbose) {
+		print("- $_\n");
+	}
+	# Check if account dir exists.
+	# Tar directory
+	# Delete source directory
+	# Do stuff.
+}
 
 __END__
 
